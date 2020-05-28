@@ -22,10 +22,12 @@ import (
 	"testing"
 
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
+	// "github.com/stretchr/testify/assert"
 )
 
 // nextEnts returns the appliable entries and updates the applied index
 func nextEnts(r *Raft, s *MemoryStorage) (ents []pb.Entry) {
+	fmt.Printf("")
 	// Transfer all unstable entries to "stable" storage.
 	s.Append(r.RaftLog.unstableEntries())
 	r.RaftLog.stabled = r.RaftLog.LastIndex()
@@ -675,6 +677,8 @@ func TestRecvMessageType_MsgRequestVote2AA(t *testing.T) {
 			t.Fatalf("unexpected error %v", err)
 		}
 		term := max(lterm, tt.logTerm)
+
+		// Term is equal, compare logTerm
 		sm.Term = term
 		sm.Step(pb.Message{MsgType: msgType, Term: term, From: 2, Index: tt.index, LogTerm: tt.logTerm})
 
@@ -1578,6 +1582,7 @@ func newNetwork(peers ...stateMachine) *network {
 // modify the configuration of any state machines it creates.
 func newNetworkWithConfig(configFunc func(*Config), peers ...stateMachine) *network {
 	size := len(peers)
+	// fmt.Printf("%d\n", size)
 	peerAddrs := idsBySize(size)
 
 	npeers := make(map[uint64]stateMachine, size)
@@ -1594,6 +1599,11 @@ func newNetworkWithConfig(configFunc func(*Config), peers ...stateMachine) *netw
 			}
 			sm := newRaft(cfg)
 			npeers[id] = sm
+
+			// if sm != nil{
+			// 	fmt.Printf("not nil ")
+			// 	fmt.Printf("%d\n", id)
+			// }
 		case *Raft:
 			v.id = id
 			npeers[id] = v
@@ -1615,6 +1625,10 @@ func (nw *network) send(msgs ...pb.Message) {
 	for len(msgs) > 0 {
 		m := msgs[0]
 		p := nw.peers[m.To]
+		// if p == nil{
+		// 	fmt.Printf("nil ")
+		// 	fmt.Printf("%d\n", m.To)
+		// }
 		p.Step(m)
 		msgs = append(msgs[1:], nw.filter(p.readMessages())...)
 	}

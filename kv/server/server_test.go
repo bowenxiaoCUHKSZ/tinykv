@@ -183,7 +183,7 @@ func TestRawDelete1(t *testing.T) {
 	_, err := server.RawDelete(nil, req)
 	assert.Nil(t, err)
 
-	val, err := Get(s, cf, []byte{99})
+	val, _ := Get(s, cf, []byte{99})
 	assert.Equal(t, nil, err)
 	assert.Equal(t, []byte(nil), val)
 }

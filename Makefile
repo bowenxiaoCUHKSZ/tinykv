@@ -51,7 +51,7 @@ format:
 	@gofmt -s -w `find . -name '*.go' -type f ! -path '*/_tools/*' -print`
 
 project1:
-	$(GOTEST) ./kv/server -run 1 
+	$(GOTEST) ./kv/server -run 1
 
 project2: project2a project2b project2c
 
@@ -60,6 +60,30 @@ project2a:
 
 project2aa:
 	$(GOTEST) ./raft -run 2AA
+	
+	# raft test
+	# $(GOTEST) ./raft -run TestLeaderElection2AA
+	# $(GOTEST) ./raft -run TestLeaderCycle2AA
+	# $(GOTEST) ./raft -run TestVoteFromAnyState2AA
+	# $(GOTEST) ./raft -run TestSingleNodeCandidate2AA
+	# $(GOTEST) ./raft -run TestHandleHeartbeat2AA
+	# $(GOTEST) ./raft -run TestRecvMessageType_MsgRequestVote2AA
+	# $(GOTEST) ./raft -run TestCandidateResetTermMessageType_MsgHeartbeat2AA
+	# $(GOTEST) ./raft -run TestCandidateResetTermMessageType_MsgAppend2AA
+	# $(GOTEST) ./raft -run TestDisruptiveFollower2AA
+	# $(GOTEST) ./raft -run TestRecvMessageType_MsgBeat2AA
+	# $(GOTEST) ./raft -run TestCampaignWhileLeader2AA
+	# $(GOTEST) ./raft -run TestSplitVote2AA
+
+	# paper raft test
+	# $(GOTEST) ./raft -run TestFollowerElectionTimeoutRandomized2AA
+	# $(GOTEST) ./raft -run TestCandidateElectionTimeoutRandomized2AA
+	# $(GOTEST) ./raft -run TestFollowersElectionTimeoutNonconflict2AA
+	# $(GOTEST) ./raft -run TestCandidatesElectionTimeoutNonconflict2AA
+	# $(GOTEST) ./raft -run TestVoter2AA
+	# $(GOTEST) ./raft -run TestFollowerUpdateTermFromMessage2AA
+	# $(GOTEST) ./raft -run TestCandidateUpdateTermFromMessage2AA
+	# $(GOTEST) ./raft -run TestLeaderUpdateTermFromMessage2AA
 
 project2ab:
 	$(GOTEST) ./raft -run 2AB
