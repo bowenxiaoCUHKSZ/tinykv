@@ -15,6 +15,7 @@
 package raft
 
 import pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
+import "fmt"
 
 // RaftLog manage the log entries, its struct look like:
 //
@@ -57,8 +58,13 @@ type RaftLog struct {
 func newLog(storage Storage) *RaftLog {
 	// Your Code Here (2A).
 	// return nil
+	fmt.Printf("")
 	new := &RaftLog{}
 	new.entries = storage.(*MemoryStorage).ents
+	new.committed = 0
+	// for _, v := range new.entries{
+	// 	fmt.Printf("%d %d\n", v.Index, v.Term)
+	// }
 	// new.entries = storage.Entries(0, len(storage.ents))
 	return new
 }
@@ -79,7 +85,8 @@ func (l *RaftLog) unstableEntries() []pb.Entry {
 // nextEnts returns all the committed but not applied entries
 func (l *RaftLog) nextEnts() (ents []pb.Entry) {
 	// Your Code Here (2A).
-	return nil
+	ret := l.entries
+	return ret
 }
 
 // LastIndex return the last index of the log entries

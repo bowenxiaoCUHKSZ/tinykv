@@ -86,7 +86,13 @@ project2aa:
 	# $(GOTEST) ./raft -run TestLeaderUpdateTermFromMessage2AA
 
 project2ab:
-	$(GOTEST) ./raft -run 2AB
+	# $(GOTEST) ./raft -run 2AB
+	# $(GOTEST) ./raft -run TestProgressLeader2AB
+	# $(GOTEST) ./raft -run TestLeaderElectionOverwriteNewerLogs2AB
+	# $(GOTEST) ./raft -run TestLogReplication2AB
+	# $(GOTEST) ./raft -run TestSingleNodeCommit2AB
+	# $(GOTEST) ./raft -run TestCommitWithoutNewTermEntry2AB
+	$(GOTEST) ./raft -run TestDuelingCandidates2AB
 
 project2ac:
 	$(GOTEST) ./raft -run 2AC

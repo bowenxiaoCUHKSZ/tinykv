@@ -20,6 +20,7 @@ import (
 	"math/rand"
 
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
+	// "github.com/pingcap/kvproto/pkg/eraftpb"
 	// "github.com/prometheus/common/log"
 )
 
@@ -162,6 +163,8 @@ type Raft struct {
 	peers []uint64
 	
 	oldTerm uint64
+
+	countOfAppend int
 }
 
 // newRaft return a raft peer with the given config
@@ -189,14 +192,49 @@ func newRaft(c *Config) *Raft {
 	// if raft == nil{
 	// 	fmt.Printf("Why raft is nil\n")
 	// }
+	oldHardState, _, _ := c.Storage.(*MemoryStorage).InitialState()
+	raft.Vote = oldHardState.Vote
+	raft.Term = oldHardState.Term
+	raft.countOfAppend = 0
 	fmt.Printf("")
 	return raft
 }
 
+func (r *Raft) sendAppendToPeers() {
+	r.countOfAppend = 0
+
+	for _, v := range r.peers{
+		if r.id == v{
+			continue
+		}
+		r.sendAppend(v)
+	}
+}
 // sendAppend sends an append RPC with new entries (if any) and the
 // current commit index to the given peer. Returns true if a message was sent.
 func (r *Raft) sendAppend(to uint64) bool {
 	// Your Code Here (2A).
+	msgs := getMessage(pb.MessageType_MsgAppend, r.id, to)
+
+	// newEntry := &pb.Entry{}
+	// newEntry.Term = r.Term
+	// newEntry.Index = r.RaftLog.LastIndex()+1
+	// r.RaftLog.entries = append(r.RaftLog.entries, *newEntry)	
+	// copy = append(copy, *newEntry)
+	for _, entry := range r.RaftLog.entries{
+		ent := pb.Entry{}
+		ent.Index = entry.Index
+		ent.Term = entry.Term
+		ent.Data = entry.Data
+		// fmt.Printf("to:%d index:%d term:%d\n", to, (&entry).Index, (&entry).Term)
+
+		msgs.Entries = append(msgs.Entries, &ent)
+	}
+	msgs.Term = r.Term
+	// fmt.Printf("from: %d, msgs.Commit : %d\n", r.id, r.RaftLog.committed)
+	msgs.Commit = r.RaftLog.LastIndex()
+
+	r.msgs = append(r.msgs, *msgs)
 	return false
 }
 
@@ -256,6 +294,7 @@ func (r *Raft) becomeCandidate() {
 	if r.oldTerm == r.Term{
 		r.Term++
 	}
+	// r.RaftLog.committed++
 	r.State = StateCandidate
 	r.resetElectionTimeOut()
 }
@@ -275,6 +314,25 @@ func (r *Raft) becomeLeader() {
 	}
 	r.State = StateLeader
 	r.oldTerm++
+
+	// init for progress
+	r.Prs = make(map[uint64]*Progress)
+	for _, v:= range r.peers{
+		r.Prs[v] = &Progress{Match:1, Next:2}
+	}
+
+	// change Log
+	// fmt.Printf("in become Leader: %d\n", r.RaftLog.LastIndex())
+	newEntry := &pb.Entry{}
+	newEntry.Term = r.Term
+	newEntry.Index = r.RaftLog.LastIndex()+1
+	r.RaftLog.entries = append(r.RaftLog.entries, *newEntry)	
+	// fmt.Printf("in become Leader: %d\n", r.RaftLog.LastIndex())
+	r.RaftLog.committed += r.RaftLog.LastIndex() - r.RaftLog.committed
+
+	r.sendAppendToPeers()
+	
+	
 }
 
 // Step the entrance of handle message, see `MessageType`
@@ -286,6 +344,7 @@ func (r *Raft) Step(m pb.Message) error {
 		switch m.MsgType{
 		case pb.MessageType_MsgHup:
 			// electition begin
+			// r.RaftLog.committed++
 			r.StartElection(m)
 		case pb.MessageType_MsgRequestVote:
 			r.handleRequestVote(&m)
@@ -324,9 +383,20 @@ func (r *Raft) Step(m pb.Message) error {
 			r.msgs = append(r.msgs, msg)
 
 		case pb.MessageType_MsgRequestVoteResponse:
-		
+
+			// handle election fail
+			lastLogIndex:= r.RaftLog.LastIndex()
+			lastLogTerm,_ := r.RaftLog.Term(lastLogIndex)
 			if m.Term > r.Term{
 				r.becomeFollower(m.Term, m.From)
+				return nil
+			}else if m.Term == r.Term{
+				if m.Index == lastLogIndex{
+					if lastLogTerm < m.LogTerm{
+						r.becomeFollower(m.Term, m.From)
+						return nil
+					}
+				}
 			}
 
 
@@ -372,6 +442,18 @@ func (r *Raft) Step(m pb.Message) error {
 				r.becomeFollower(m.Term, m.From)
 			}
 
+			// if the majority
+			if !m.Reject{
+				r.countOfAppend++
+			} 
+
+			if r.countOfAppend > len(r.peers) / 2 - 1{
+				r.RaftLog.committed += r.RaftLog.LastIndex()  - r.RaftLog.committed
+			}
+
+
+			
+
 		case pb.MessageType_MsgBeat:
 			var msgs []pb.Message
 			for _, v := range r.peers{
@@ -396,6 +478,37 @@ func (r *Raft) Step(m pb.Message) error {
 
 		case pb.MessageType_MsgAppend:
 			r.handleAppendEntries(m)
+
+		case pb.MessageType_MsgPropose:
+			r.Prs[r.id].Match++
+			r.Prs[r.id].Next++
+
+			// r.RaftLog.committed = r.RaftLog.LastIndex()+2
+
+			// incorperate new message
+			var cnt uint64
+			for _, v := range m.Entries{
+				newEntry := pb.Entry{}
+				newEntry.Data = v.Data
+				newEntry.Index = r.RaftLog.LastIndex()+1
+				newEntry.Term = r.Term
+				r.RaftLog.entries = append(r.RaftLog.entries, newEntry)
+
+				if v.Data != nil{
+					cnt++
+				}
+			}
+
+
+			// RaftLog.committed should not be updated now
+			// but sa
+			// r.RaftLog.committed += cnt
+			if len(r.peers) == 1{
+				r.RaftLog.committed = r.RaftLog.LastIndex()
+			}
+			
+			r.sendAppendToPeers()
+
 		}
 	}
 	return nil
@@ -407,11 +520,25 @@ func (r *Raft) handleAppendEntries(m pb.Message) {
 	msg := getMessage(pb.MessageType_MsgAppendResponse, r.id, m.From)
 	msg.Term = r.Term
 
+	// fmt.Printf("%d %d\n", r.Term, m.Term)
 	if r.Term > m.Term{
 		// r.msgs = append(r.msgs, *msg)
 	}else{
+		
 		r.becomeFollower(m.Term, m.From)
+		// overwrite local entries
+		var newEntries []pb.Entry
+		for _, v := range m.Entries{
+			// if v.Data != nil{
+			// 	fmt.Printf("Yes!!\n")
+			// }
+			// fmt.Printf("recieve:%d, index:%d, term:%d\n", r.id, v.Index, v.Term)
+			newEntries = append(newEntries, *v)
+		}
+		r.RaftLog.entries = newEntries
+		r.RaftLog.committed = m.Commit
 	}
+	// r.RaftLog.committed = m.Commit
 	r.msgs = append(r.msgs, *msg)
 }
 
@@ -475,7 +602,8 @@ func (r *Raft) StartElection(m pb.Message) {
 		vote.Term = r.Term
 		vote.From = r.id
 		vote.To = uint64(v)
-		
+		vote.LogTerm,_ = r.RaftLog.Term(r.RaftLog.LastIndex())
+		vote.Index = r.RaftLog.LastIndex()
 		// append message into queue
 		// wait for deliver
 		msgs = append(msgs, vote)
@@ -505,6 +633,10 @@ func (r *Raft) handleRequestVote(m *pb.Message){
 	lastLogIndex := r.RaftLog.LastIndex()
 	msgs.Term = r.Term
 	msgs.Reject = true
+
+	// 
+	msgs.LogTerm = lastLogTerm
+	msgs.Index = lastLogIndex
 
 	if m.Term < r.Term {
 		r.msgs = append(r.msgs, *msgs)
@@ -537,7 +669,9 @@ func (r *Raft) handleRequestVote(m *pb.Message){
 	if lastLogTerm > m.LogTerm || (m.LogTerm == lastLogTerm && m.Index < lastLogIndex) {
 		// 选取限制
 		r.msgs = append(r.msgs, *msgs)
+		fmt.Printf("lastLogTerm:%d m.LogTerm:%d\n", lastLogTerm, m.LogTerm)
 		return
+	}else{
 	}
 
 	// r.Term = m.Term
